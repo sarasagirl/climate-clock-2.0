@@ -1,0 +1,455 @@
+import requests, openpyxl
+
+ukUrl = "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/1064926/2021-provisional-emissions-data-tables.xlsx"
+ukFileName = "uk.xlsx"
+
+import time, sys
+from rgbmatrix import RGBMatrix, RGBMatrixOptions
+from PIL import Image, ImageDraw, ImageFont
+
+import requests, pytz
+from datetime import datetime
+
+import RPi.GPIO as GPIO
+import time
+GPIO.setmode(GPIO.BCM)
+
+motionPin = 21
+GPIO.setup(motionPin, GPIO.IN)
+interval = 5
+
+options = RGBMatrixOptions()
+options.cols = 64
+options.rows = 64
+options.parallel = 1
+options.gpio_slowdown = 3
+options.drop_privileges=False
+
+panelImageFileName = "panel.jpg"
+imageWidth = 430
+imageHeight = 64
+
+image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+draw = ImageDraw.Draw(image)
+font = ImageFont.load_default()
+
+
+
+def downloadJasonData(url):
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print("Failed to download data:", response.status_code, response.text)
+        return None
+
+# Download CC data 
+url = "https://api.climateclock.world/v2/clock.json"
+dataDict = downloadJasonData(url)
+
+# Get X-Day in UTC and EST, and calculate the remaining time.
+xDay = dataDict["data"]["modules"]["carbon_deadline_1"]["timestamp"]
+xdt = datetime.fromisoformat(xDay)
+# print("X-Day in UTC: ", xdt)xdtEst = xdt.astimezone( pytz.timezone("EST") )
+xdtEst = xdt.astimezone( pytz.timezone("EST") )
+deadline = "Deadline Of Climate Clock In EST: " + str(xdtEst)
+
+nowEst = datetime.now().astimezone( pytz.timezone("EST") )
+
+timeDiffToXDay = xdtEst - nowEst
+yrs = timeDiffToXDay.days // 365
+days = timeDiffToXDay.days % 365
+
+mins = timeDiffToXDay.seconds // 60
+secs = timeDiffToXDay.seconds % 60
+
+hrs = mins // 60
+mins2 = mins % 60
+
+remaining = "Remaining  Time: " + str(yrs) + " years " + str(days) + " days " + str(hrs) + " hours " + str(mins2) + " minutes " + str(secs) + " seconds"
+# Get renewable energy percentage
+initial = dataDict["data"]["modules"]["renewables_1"]["initial"]
+rate = dataDict["data"]["modules"]["renewables_1"]["rate"]
+timestamp = dataDict["data"]["modules"]["renewables_1"]["timestamp"]
+
+timestampUtc = datetime.fromisoformat(timestamp)
+nowUtc = datetime.now().astimezone( pytz.timezone("UTC") )
+timeDiffFromInitial = nowUtc - timestampUtc
+
+renewablesPercentage = initial + rate * timeDiffFromInitial.total_seconds()
+# print(renewablesPercentage)
+renewablesround = ( round(renewablesPercentage, 1) )
+#( round(renewablesPercentage, 0) )
+#( int(round(renewablesPercentage, 0)) )
+renewables = "Global Renewable Energy Use Percentage: " + str(renewablesround) + "%"
+
+
+
+apiKey =  "RVox2RQpfGMqTYDW0BS6RawjjGMby6JIeNzrOWQ3"
+startMonth = "2013-01"
+startYear = "2013"
+    
+def makeUsCo2Url(msnId, startMonth, apiKey):
+    url = "https://api.eia.gov/v2/total-energy/data/" + \
+            "?data[]=value" + \
+            "&facets[msn][]=" + msnId + \
+            "&start=" + startMonth + \
+            "&frequency=monthly" + \
+            "&sort[0][column]=period&sort[0][direction]=desc" + \
+            "&length=13" + \
+            "&api_key=" + apiKey
+    return url
+
+def makeMaCo2Url(startYear, apiKey):
+    url = "https://api.eia.gov/v2/co2-emissions/co2-emissions-aggregates/data/" +\
+            "?data[]=value" +\
+            "&facets[stateId][]=MA&facets[fuelId][]=TO&facets[sectorId][]=TT" +\
+            "&start=" + startYear +\
+            "&frequency=annual" +\
+            "&sort[0][column]=period&sort[0][direction]=desc" +\
+            "&length=2" +\
+            "&api_key=" + apiKey
+    return url
+
+# Total energy-related CO2 emission in the US
+url = makeUsCo2Url("TETCEUS", startMonth, apiKey)
+usTotalCo2Dict = downloadJasonData(url)
+# print(usTotalCo2Dict)
+
+usTotalCo2 = usTotalCo2Dict["response"]["data"][0]
+roundusTotalCo2 = round(usTotalCo2["value"], 1)
+ustotal = "US Total Monthly CO2 Emissions From Energy Use"
+ustotal2022 = str(usTotalCo2["period"]) + ": " + str(roundusTotalCo2) + " Million Tons"
+
+usTotalCo2YrAgo = usTotalCo2Dict["response"]["data"][12]
+roundusTotalCo2YrAgo = (round(usTotalCo2YrAgo["value"], 1))
+ustotal2021 = str(usTotalCo2YrAgo["period"]) + ": " + str(roundusTotalCo2YrAgo) + " Million Tons"
+
+percentage1 = (roundusTotalCo2 - roundusTotalCo2YrAgo) / roundusTotalCo2YrAgo * 100
+ustotalpercentage = (round(percentage1, 1))
+ustotalpercentage1 = "Increase Rate From The Previous Year: " + "+" + str(ustotalpercentage) + "%"
+
+# Total energy-related residential CO2 emission in the US
+url = makeUsCo2Url("TERCEUS", startMonth, apiKey)
+usResidentialCo2Dict = downloadJasonData(url)
+# print(usResidentialCo2Dict)
+
+usResidentialCo2 = usResidentialCo2Dict["response"]["data"][0]
+ushouse = "US Total Monthly Residential CO2 Emissions From Energy Use"
+roundusResidentialCo2 = (round(usResidentialCo2["value"], 1))
+ushouse2022 = str(usResidentialCo2["period"]) + ": " + str(roundusResidentialCo2) + " Million Tons"
+
+usResidentialCo2YrAgo = usResidentialCo2Dict["response"]["data"][12]
+roundusResidentialCo2YrAgo = (round(usResidentialCo2YrAgo["value"], 1))
+ushouse2021 = str(usResidentialCo2YrAgo["period"]) + ": " + str(roundusResidentialCo2YrAgo) + " Million Tons"
+
+percentage2 = (roundusResidentialCo2 - roundusResidentialCo2YrAgo) / roundusResidentialCo2YrAgo * 100
+ushousepercentage = (round(percentage2, 1))
+ushousepercentage1 = "Increase Rate From The Previous Year: " + "+" + str(ushousepercentage) + "%"
+
+# Total energy-related CO2 emission in MA
+url = makeMaCo2Url(startYear, apiKey)
+maTotalCo2Dict = downloadJasonData(url)
+# print(maTotalCo2Dict)
+
+maTotalCo2 = maTotalCo2Dict["response"]["data"][0]
+matitle = "Massachusetts Total Annual CO2 Emissions From Energy Use"
+roundmaTotalCo2 = (round(maTotalCo2["value"], 1))
+ma2020 = str(maTotalCo2["period"]) + ": " + str(roundmaTotalCo2) + " Million Tons"
+
+maTotalCo2YrAgo = maTotalCo2Dict["response"]["data"][1]
+roundmaTotalCo2YrAgo = (round(maTotalCo2YrAgo["value"], 1))
+ma2019 = str(maTotalCo2YrAgo["period"]) + ": " + str(roundmaTotalCo2YrAgo) + " Million Tons"
+
+percentage3 = (roundmaTotalCo2 - roundmaTotalCo2YrAgo) / roundmaTotalCo2YrAgo * 100
+matitlepercentage = (round(percentage3, 1))
+matitlepercentage1 =  "Increase Rate From The Previous Year: " + str(matitlepercentage) + "%"
+
+
+
+def downloadExcelData(url):
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.content
+    else:
+        print("Failed to download data:", response.status_code, response.text)
+        return None
+
+response = downloadExcelData(ukUrl)
+
+with open(ukFileName,"wb") as ef:
+    ef.write(response)
+
+workbook = openpyxl.load_workbook(ukFileName)
+#print(workbook.sheetnames)
+table1 = workbook["Table1"]
+
+ag6 = table1["AG6"]
+#print("AG6 in Table 1: ", ag6.value)
+
+af6 = table1["AF6"]
+#print("AF6 in Table 1: ", af6.value)
+
+ag12 = table1["AG12"]
+#print("AG12 in Table 1: ", ag12.value)
+
+af12 = table1["AF12"]
+#print("AF12 in Table 1: ", af12.value)
+
+ukemission = "UK Annual CO2 Emissions From Energy Supply"
+
+rounduk2020 = (round(af6.value, 1))
+uk2020 = "2020: " + str(rounduk2020) + " Million Tons"
+
+rounduk2021 = (round(ag6.value, 1))
+uk2021 = "2021: " + str(rounduk2021) + " Million Tons"
+
+ukpercentage2021 = (ag6.value - af6.value) / ag6.value * 100
+roundukpercentage1 = (round(ukpercentage2021, 1))
+ukpercentage1 = "Increase Rate From The Previous Year: " + str(roundukpercentage1) + "%"
+
+ukresidential = "UK Annual CO2 Emissions From Residential"
+
+roundukresidential2020 = (round(af12.value, 1))
+ukresidential2020 = "2020: " + str(roundukresidential2020) + " Million Tons"
+
+roundukresidential = (round(ag12.value, 1))
+ukresidential2021 = "2021: " + str(roundukresidential) + " Million Tons"
+
+ukresidentialpercentage = (ag12.value - af12.value) / ag12.value * 100
+roundukpercentage2 = (round(ukresidentialpercentage, 1))
+ukpercentage2 = "Increase Rate From The Previous Year: " + str(roundukpercentage2) + "%" 
+
+
+
+message = "Let's Save Energy Use From Your Daily Life To Reduce CO2 Emissions!"
+
+
+def makeFirstPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24),  deadline, fill=(255, 0, 0), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeSecondPanelImage():
+    draw.text((5, 24), remaining, fill=(255, 0, 0), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeThirdPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), renewables, fill=(139, 208, 26), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeFourthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), ukemission, fill=(0, 89, 188), font=font
+    image.save(panelImageFileName)
+    return image
+
+def makeFifthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), uk2020, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeSixthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), uk2021, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeSeventhPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ukpercentage1, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeTwelvethPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), ustotal, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeThirteenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ustotal2021, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeFourteenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ustotal2022, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeFifteenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ustotalpercentage1, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeSixteenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), ushouse, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeSeventeenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ushouse2021, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+    
+def makeEighteenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ushouse2022, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeNineteenthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ushousepercentage1, fill=(0, 89, 188), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeTwentythPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), matitle, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeTwentyfirstPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5,24), ma2019, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeTwentysecondPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)   
+    draw.text((5,24), ma2020, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeTwentythirdPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)  
+    draw.text((5,24), matitlepercentage1, fill=(255, 255, 255), font=font)
+    image.save(panelImageFileName)
+    return image
+
+def makeTwentyfourthPanelImage():
+    image = Image.new("RGB", (imageWidth, imageHeight), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.text((5, 24), message, fill=(255, 162, 5), font=font)
+    image.save(panelImageFileName)
+    return image
+
+
+
+matrix = RGBMatrix(options = options)
+
+panelInterval = 5
+
+while True:
+    try:
+        if GPIO.input(motionPin) == GPIO.HIGH:
+            for i in range(imageWidth):
+                    matrix.SetImage(makeFirstPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeSecondPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeThirdPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeFourthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeFifthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeSixthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeSeventhPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeTwelvethPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeThirteenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeFourteenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+            for i in range(imageWidth):
+                    matrix.SetImage(makeFifteenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()   
+            for i in range(imageWidth):
+                    matrix.SetImage(makeSixteenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeSeventeenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()          
+            for i in range(imageWidth):
+                    matrix.SetImage(makeEighteenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()        
+            for i in range(imageWidth):
+                    matrix.SetImage(makeNineteenthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeTwentythPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeTwentyfirstPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()       
+            for i in range(imageWidth):
+                    matrix.SetImage(makeTwentysecondPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()       
+            for i in range(imageWidth):
+                    matrix.SetImage(makeTwentythirdPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+            for i in range(imageWidth):
+                    matrix.SetImage(makeTwentyfourthPanelImage(), 10-i)
+                    time.sleep(0.05)
+                    matrix.Clear()
+    except KeyboardInterrupt:
+        break
