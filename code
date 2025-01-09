@@ -1,17 +1,17 @@
 import requests, openpyxl
-
-ukUrl = "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/1064926/2021-provisional-emissions-data-tables.xlsx"
-ukFileName = "uk.xlsx"
-
 import time, sys
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from PIL import Image, ImageDraw, ImageFont
 
-import requests, pytz
+import pytz
 from datetime import datetime
 
 import RPi.GPIO as GPIO
-import time
+
+
+ukUrl = "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/1064926/2021-provisional-emissions-data-tables.xlsx"
+ukFileName = "uk.xlsx"
+
 GPIO.setmode(GPIO.BCM)
 
 motionPin = 21
